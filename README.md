@@ -697,22 +697,6 @@ python -m pytest --cov=afaa --cov-report=term-missing
 The tests use small in-memory COBRA models and mocked HTTP sessions. Unit tests
 should not depend on the availability or contents of the live BiGG service.
 
-## Building the distribution
-
-Build a wheel and source distribution:
-
-```bash
-python -m build
-```
-
-Validate the generated artifacts:
-
-```bash
-python -m twine check dist/*
-```
-
-Artifacts are written to `dist/`. Test the wheel in a clean virtual environment
-before publishing it.
 
 ## Development notes
 
