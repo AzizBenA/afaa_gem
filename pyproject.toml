@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "afaa_gem"
+version = "0.1.0"
+description = "Utilities for construction and analysis of genome-scale metabolic models"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "Aziz Ben Ammar", email = "aziz.ben.ammar@rwth-aachen.de" },
+]
+dependencies = [
+    "cobra",
+    "pandas",
+    "requests",
+    "openpyxl",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "build",
+    "twine",
+]
+
+[project.urls]
+Repository = "https://https://github.com/AzizBenA/afaa_gem"
+Issues = "https://https://github.com/AzizBenA/afaa_gem/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
