@@ -1,6 +1,6 @@
-# AFAA_GEM
+# AFAA-GEM
 
-AFAA_GEM is a Python toolkit for constructing, inspecting, curating, validating,
+AFAA-GEM is a Python toolkit for constructing, inspecting, curating, validating,
 and analysing genome-scale metabolic models with
 [COBRApy](https://opencobra.github.io/cobrapy/).
 
@@ -9,7 +9,7 @@ package. It includes utilities for SBML input and output, reaction and metabolit
 inspection, flux analysis, biomass-reaction maintenance, model comparison,
 BiGG database queries, charge curation, and Excel export.
 
-The package is installed from PyPI as `afaa_gem` and imported in Python as
+The package is installed from PyPI as `afaa-gem` and imported in Python as
 `afaa`.
 
 > **Project status:** AFAA GEM is currently an early-stage package. Review model
