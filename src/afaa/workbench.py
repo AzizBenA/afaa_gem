@@ -3,6 +3,7 @@ from cobra import Model
 from afaa.inspection import reaction_details
 from afaa.flux import get_active_reactions
 from afaa.biomass import update_gam
+from afaa.phpp import phpp as run_phpp
 
 
 class Workbench:
@@ -23,5 +24,18 @@ class Workbench:
         return update_gam(
             self.model,
             reaction_id=reaction_id,
+            **kwargs,
+        )
+
+    def phpp(
+        self,
+        h2_reaction_id: str = "EX_h2_e",
+        o2_reaction_id: str = "EX_o2_e",
+        **kwargs,
+    ):
+        return run_phpp(
+            self.model,
+            h2_reaction_id=h2_reaction_id,
+            o2_reaction_id=o2_reaction_id,
             **kwargs,
         )

@@ -1,5 +1,10 @@
+import matplotlib
 import pytest
 from cobra import Metabolite, Model, Reaction
+
+
+matplotlib.use("Agg")
+
 
 @pytest.fixture
 def tiny_model():

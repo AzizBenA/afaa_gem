@@ -21,6 +21,7 @@ The package is installed from PyPI as `afaa-gem` and imported in Python as
 - Load and save COBRA models in SBML/XML format.
 - Search reactions and inspect reactions, metabolites, and gene associations.
 - Optimise models and extract active reaction fluxes.
+- Compute and visualise phenotype phase planes with optional experimental data.
 - Update biomass coefficients and growth-associated maintenance requirements.
 - Compare biomass composition between a model and a tabular data source.
 - Compare curated and non-curated models.
@@ -47,13 +48,15 @@ afaa_gem/
 │       ├── flux.py
 │       ├── inspection.py
 │       ├── model_io.py
+│       ├── phpp.py
 │       ├── validation.py
 │       └── workbench.py
 └── tests/
     ├── conftest.py
     ├── test_bigg.py
     ├── test_curation.py
-    └── test_model_io.py
+    ├── test_model_io.py
+    └── test_phpp.py
 ```
 
 The project uses the recommended `src` layout. Package source code lives under
@@ -66,6 +69,8 @@ The project uses the recommended `src` layout. Package source code lives under
 - pandas
 - requests
 - openpyxl
+- NumPy
+- Matplotlib
 
 The complete runtime dependency list is maintained in `pyproject.toml`.
 
@@ -178,6 +183,50 @@ print(reaction_data["bigg_id"])
 BiGG requests require network access. HTTP errors are raised by `requests`
 rather than being converted into empty results.
 
+### Run a phenotype phase plane analysis
+
+Calculate a production envelope directly from a COBRA model, fit its line of
+optimality, optionally compare it with experimental H2/O2 uptake measurements,
+and create a heatmap:
+
+```python
+from afaa import load_sbml_model, phpp
+
+model = load_sbml_model("model.xml")
+
+result = phpp(
+    model,
+    h2_reaction_id="EX_h2_e",
+    o2_reaction_id="EX_o2_e",
+    experimental_data="experimental_gases.xlsx",
+    points=20,
+    error_type="sem",
+    output_path="phpp_analysis.png",
+    show=False,
+)
+
+print(result.optimality_fit.slope)
+print(result.optimality_fit.intercept)
+
+if result.experimental_fit is not None:
+    print(result.experimental_fit.r_squared)
+```
+
+The returned `PhppResult` retains the source envelope, grouped experimental
+data, fitted lines, heatmap arrays, Matplotlib figure, and axes. Omitting
+`experimental_data` performs a model-only analysis.
+
+The same workflow is available from a workbench:
+
+```python
+workbench = Workbench(model)
+result = workbench.phpp(
+    h2_reaction_id="EX_h2_e",
+    o2_reaction_id="EX_o2_e",
+    points=20,
+)
+```
+
 ### Update GAM coefficients
 
 ```python
@@ -204,6 +253,7 @@ The functions do not all handle models in the same way:
 | `update_metabolite_charges_from_excel` | Mutates the supplied model |
 | `update_metabolite_charges_from_bigg` | Mutates the supplied model |
 | `reaction_flux` | Changes the supplied model's objective |
+| `compute_phpp` and `phpp` | Analyse the model without intentionally changing it |
 | `update_metabolite_info` | Returns an updated copy |
 | `add_missing_reactions` | Returns an updated copy |
 | `add_missing_metabolites` | Returns an updated copy |
@@ -224,9 +274,9 @@ update_gam(model)
 
 ## Public API reference
 
-Only `Workbench`, `load_sbml_model`, and `save_sbml_model` are re-exported from
-the top-level `afaa` namespace. Import the remaining functions from their
-individual modules.
+`Workbench`, `PhppResult`, `analyze_phpp`, `phpp`, `load_sbml_model`, and
+`save_sbml_model` are re-exported from the top-level `afaa` namespace. Import
+the remaining functions from their individual modules.
 
 ### `afaa.model_io`
 
@@ -596,6 +646,130 @@ Excel.
 - Reaction details are also printed.
 - A missing reaction is reported without creating a result table.
 
+### `afaa.phpp`
+
+The PHPP module calculates and visualises two-dimensional phenotype phase
+planes. Its high-level model workflow uses COBRApy's `production_envelope`.
+Existing production-envelope CSV, Excel, or DataFrame data can also be analysed
+without recomputing the model.
+
+Importing `afaa.phpp` does not read files, modify Matplotlib's global style, or
+display a figure.
+
+#### `phpp(model, h2_reaction_id="EX_h2_e", o2_reaction_id="EX_o2_e", *, objective=None, points=20, experimental_data=None, output_path=None, show=False, **analysis_options) -> PhppResult`
+
+Run the complete model-based workflow:
+
+1. Calculate a production envelope.
+2. Convert uptake fluxes to positive plotting values.
+3. Find maximum-growth points for each hydrogen uptake.
+4. Resolve growth ties using the lowest oxygen uptake.
+5. Fit the model line of optimality.
+6. Optionally group and fit experimental measurements.
+7. Build and optionally save the PHPP figure.
+
+The function uses the model's current objective unless `objective` is supplied.
+`points` specifies the number of envelope grid points per reaction and must be
+at least two.
+
+Common analysis options forwarded to `analyze_phpp` include:
+
+- `growth_column`, default `flux_maximum`
+- `experimental_h2_column`, default `H2 Flux theoretic`
+- `experimental_o2_column`, default `O2 flux theoretic`
+- `replicate_count`, default `3`
+- `experimental_group_column`, default `None`
+- `error_type`, either `std` or `sem`
+- `uptake_sign`, default `-1.0`
+- `y_limit`, `figsize`, and `cmap`
+
+#### `compute_phpp(model, h2_reaction_id="EX_h2_e", o2_reaction_id="EX_o2_e", *, objective=None, points=20) -> pandas.DataFrame`
+
+Calculate only the COBRApy production envelope. This is useful when computation
+and plotting happen in separate workflows.
+
+```python
+from afaa.phpp import compute_phpp
+
+envelope = compute_phpp(
+    model,
+    h2_reaction_id="EX_h2_e",
+    o2_reaction_id="EX_o2_e",
+    points=30,
+)
+envelope.to_csv("production_envelope.csv", index=False)
+```
+
+Missing reaction IDs raise `KeyError`. A `points` value below two raises
+`ValueError`.
+
+#### `analyze_phpp(production_envelope_data, experimental_data=None, **options) -> PhppResult`
+
+Analyse a previously calculated envelope supplied as:
+
+- a pandas DataFrame;
+- a `.csv` path; or
+- an `.xlsx`/`.xls` path.
+
+Experimental data accepts the same input forms. It is optional, so the
+model-optimality heatmap can be produced by itself:
+
+```python
+from afaa import analyze_phpp
+
+result = analyze_phpp(
+    "production_envelope.csv",
+    growth_column="flux_maximum",
+    h2_column="EX_h2_e",
+    o2_column="EX_o2_e",
+    output_path="production_envelope.pdf",
+)
+```
+
+`show` defaults to `False`, which is suitable for tests, notebooks, pipelines,
+and headless systems. Set `show=True` for an interactive Matplotlib window.
+
+#### `PhppResult`
+
+Structured analysis result with these attributes:
+
+| Attribute | Description |
+|---|---|
+| `envelope` | Original production-envelope DataFrame |
+| `grouped_experimental_data` | Replicate means and error statistics, or `None` |
+| `optimality_points` | Maximum-growth points used for the model fit |
+| `optimality_fit` | Model `LinearFit` |
+| `experimental_fit` | Experimental `LinearFit`, or `None` |
+| `heatmap_x_edges` | Oxygen uptake bin edges |
+| `heatmap_y_edges` | Hydrogen uptake bin edges |
+| `heatmap_values` | Growth-rate heatmap matrix |
+| `figure` | Matplotlib `Figure` |
+| `axes` | Main Matplotlib `Axes` |
+
+The figure remains open after the call so callers can customise or save it:
+
+```python
+result.axes.set_title("Hydrogen-oxygen phenotype phase plane")
+result.figure.savefig("custom_phpp.svg", bbox_inches="tight")
+```
+
+#### `LinearFit`
+
+Immutable line-fit result containing `slope`, `intercept`, and `r_squared`.
+Use `fit.predict(values)` to evaluate the line.
+
+#### PHPP helper functions
+
+- `group_experimental_data`: Group by a condition column or by consecutive
+  replicate blocks, returning means, standard deviations, standard errors, and
+  counts.
+- `fit_linear_regression`: Fit a line with NumPy and return `LinearFit`.
+- `calculate_error_for_plotting`: Extract experimental values and either SD or
+  SEM arrays.
+- `calculate_optimality_line`: Extract the optimal model points and fitted line.
+- `build_heatmap_grid`: Create sorted heatmap edges and growth values.
+- `plot_phpp`: Build the Matplotlib figure from prepared numerical results.
+
 ### `afaa.workbench`
 
 #### `Workbench(model)`
@@ -621,6 +795,12 @@ DataFrame of reactions exceeding the absolute flux threshold.
 
 Delegate to `afaa.biomass.update_gam` using the stored model. Extra keyword
 arguments are forwarded to `update_gam`.
+
+#### `Workbench.phpp(h2_reaction_id="EX_h2_e", o2_reaction_id="EX_o2_e", **kwargs)`
+
+Run `afaa.phpp.phpp` with the model stored in the workbench. Keyword arguments
+control production-envelope computation, experimental-data processing, plotting,
+and output.
 
 ## Working with Excel
 
