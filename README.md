@@ -15,9 +15,6 @@ The package is installed from PyPI as `afaa-gem` and imported in Python as
 > **Project status:** AFAA GEM is currently an early-stage package. Review model
 > changes and optimisation results before using them in a production curation
 > workflow.
-## TODO:
-
--Add the analysis part
 
 ## Features
 
