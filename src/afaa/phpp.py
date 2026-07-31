@@ -464,8 +464,8 @@ def plot_phpp(
     h2_plot_column: str,
     o2_plot_column: str,
     grouped_experimental_data: pd.DataFrame | None = None,
-    experimental_h2_column: str = "H2 Flux theoretic",
-    experimental_o2_column: str = "O2 flux theoretic",
+    experimental_h2_column: str | None = None,
+    experimental_o2_column: str | None = None,
     error_type: ErrorType = "std",
     experimental_fit: LinearFit | None = None,
     y_limit: float | None = None,
@@ -521,6 +521,14 @@ def plot_phpp(
         )
 
         if grouped_experimental_data is not None:
+            if (
+                experimental_h2_column is None
+                or experimental_o2_column is None
+            ):
+                raise ValueError(
+                    "Experimental H2 and O2 column names are required "
+                    "when grouped experimental data is provided."
+                )
             exp_x, exp_y, exp_xerr, exp_yerr = (
                 calculate_error_for_plotting(
                     grouped_experimental_data,
@@ -659,8 +667,8 @@ def analyze_phpp(
     growth_column: str = "flux_maximum",
     h2_column: str = "EX_h2_e",
     o2_column: str = "EX_o2_e",
-    experimental_h2_column: str = "H2 Flux theoretic",
-    experimental_o2_column: str = "O2 flux theoretic",
+    experimental_h2_column: str | None = None,
+    experimental_o2_column: str | None = None,
     replicate_count: int = 3,
     experimental_group_column: str | None = None,
     error_type: ErrorType = "std",
@@ -747,6 +755,15 @@ def analyze_phpp(
     grouped_experimental_data = None
     experimental_fit = None
     if experimental_data is not None:
+        if (
+            experimental_h2_column is None
+            or experimental_o2_column is None
+        ):
+            raise ValueError(
+                "Set experimental_h2_column and "
+                "experimental_o2_column when experimental_data is "
+                "provided."
+            )
         experimental = _load_dataframe(
             experimental_data,
             label="experimental",
@@ -822,6 +839,8 @@ def phpp(
     h2_reaction_id: str = "EX_h2_e",
     o2_reaction_id: str = "EX_o2_e",
     *,
+    experimental_h2_column: str | None = None,
+    experimental_o2_column: str | None = None,
     objective=None,
     points: int = 20,
     experimental_data: DataSource | None = None,
@@ -842,6 +861,8 @@ def phpp(
         experimental_data=experimental_data,
         h2_column=h2_reaction_id,
         o2_column=o2_reaction_id,
+        experimental_h2_column=experimental_h2_column,
+        experimental_o2_column=experimental_o2_column,
         output_path=output_path,
         show=show,
         **analysis_options,

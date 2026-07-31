@@ -3,6 +3,7 @@ from cobra import Model
 from afaa.inspection import reaction_details
 from afaa.flux import get_active_reactions
 from afaa.biomass import update_gam
+from afaa.energy_maintenance import optimize_energy_maintenance
 from afaa.phpp import phpp as run_phpp
 
 
@@ -37,5 +38,18 @@ class Workbench:
             self.model,
             h2_reaction_id=h2_reaction_id,
             o2_reaction_id=o2_reaction_id,
+            **kwargs,
+        )
+
+    def optimize_energy_maintenance(
+        self,
+        experimental_data,
+        gam_values,
+        **kwargs,
+    ):
+        return optimize_energy_maintenance(
+            self.model,
+            experimental_data,
+            gam_values,
             **kwargs,
         )

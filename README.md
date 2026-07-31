@@ -25,6 +25,7 @@ The package is installed from PyPI as `afaa-gem` and imported in Python as
 - Search reactions and inspect reactions, metabolites, and gene associations.
 - Optimise models and extract active reaction fluxes.
 - Compute and visualise phenotype phase planes with optional experimental data.
+- Calibrate GAM and NGAM values against experimental growth measurements.
 - Update biomass coefficients and growth-associated maintenance requirements.
 - Compare biomass composition between a model and a tabular data source.
 - Compare curated and non-curated models.
@@ -47,6 +48,7 @@ afaa_gem/
 │       ├── bigg.py
 │       ├── biomass.py
 │       ├── curation.py
+│       ├── energy_maintenance.py
 │       ├── export.py
 │       ├── flux.py
 │       ├── inspection.py
@@ -58,6 +60,7 @@ afaa_gem/
     ├── conftest.py
     ├── test_bigg.py
     ├── test_curation.py
+    ├── test_energy_maintenance.py
     ├── test_model_io.py
     └── test_phpp.py
 ```
@@ -202,6 +205,8 @@ result = phpp(
     h2_reaction_id="EX_h2_e",
     o2_reaction_id="EX_o2_e",
     experimental_data="experimental_gases.xlsx",
+    experimental_h2_column="measured_hydrogen_uptake",
+    experimental_o2_column="measured_oxygen_uptake",
     points=20,
     error_type="sem",
     output_path="phpp_analysis.png",
@@ -230,6 +235,54 @@ result = workbench.phpp(
 )
 ```
 
+### Optimise GAM and NGAM
+
+Search explicit GAM and NGAM candidate values against experimental growth data:
+
+```python
+import numpy as np
+import pandas as pd
+
+from afaa import load_sbml_model, optimize_energy_maintenance
+
+model = load_sbml_model("model.xml")
+experimental = pd.read_excel("growth_measurements.xlsx")
+
+result = optimize_energy_maintenance(
+    model,
+    experimental,
+    gam_values=np.arange(10, 151, 10),
+    ngam_values=np.arange(0, 16, 1),
+    biomass_reaction_id="Growth",
+    atpm_reaction_id="ATPM",
+    experimental_growth_column="measured_growth",
+    experimental_h2_column="measured_hydrogen_uptake",
+    output_path="energy_maintenance_results.xlsx",
+)
+
+print(result.best_by_mean_difference)
+print(result.best_by_r2)
+print(result.combinations.head())
+```
+
+NGAM candidates can instead be estimated by maximizing ATP-maintenance flux at
+fixed hydrogen uptake values:
+
+```python
+result = optimize_energy_maintenance(
+    model,
+    experimental,
+    gam_values=np.arange(10, 151, 10),
+    h2_uptake_values=np.arange(8.7, 14.8, 0.1),
+    experimental_growth_column="measured_growth",
+    experimental_h2_column="measured_hydrogen_uptake",
+)
+```
+
+Provide exactly one of `ngam_values` or `h2_uptake_values`. The search uses
+COBRA model contexts, so objectives, bounds, and GAM coefficients are restored
+after every candidate is evaluated.
+
 ### Update GAM coefficients
 
 ```python
@@ -257,6 +310,7 @@ The functions do not all handle models in the same way:
 | `update_metabolite_charges_from_bigg` | Mutates the supplied model |
 | `reaction_flux` | Changes the supplied model's objective |
 | `compute_phpp` and `phpp` | Analyse the model without intentionally changing it |
+| `optimize_energy_maintenance` | Searches temporary model contexts and restores the input model |
 | `update_metabolite_info` | Returns an updated copy |
 | `add_missing_reactions` | Returns an updated copy |
 | `add_missing_metabolites` | Returns an updated copy |
@@ -277,7 +331,7 @@ update_gam(model)
 
 ## Public API reference
 
-`Workbench`, `PhppResult`, `analyze_phpp`, `phpp`, `load_sbml_model`, and
+`Workbench`, PHPP APIs, energy-maintenance APIs, `load_sbml_model`, and
 `save_sbml_model` are re-exported from the top-level `afaa` namespace. Import
 the remaining functions from their individual modules.
 
@@ -649,6 +703,95 @@ Excel.
 - Reaction details are also printed.
 - A missing reaction is reported without creating a result table.
 
+### `afaa.energy_maintenance`
+
+The energy-maintenance module calibrates growth-associated maintenance (GAM)
+and non-growth-associated maintenance (NGAM) against measured growth rates.
+GAM is represented by ATP hydrolysis coefficients in the biomass reaction;
+NGAM is represented by the lower bound of the ATP-maintenance reaction.
+
+The calibration workflow is import-safe and contains no interactive prompts,
+hard-coded file paths, or automatic exports. Model changes are made inside
+COBRA contexts and are reverted after evaluation.
+
+#### `optimize_energy_maintenance(model, experimental_data, gam_values, *, experimental_growth_column, experimental_h2_column, ngam_values=None, h2_uptake_values=None, ...) -> EnergyMaintenanceResult`
+
+Evaluate the Cartesian product of GAM and NGAM candidates. Exactly one NGAM
+source is required:
+
+- `ngam_values`: Explicit ATP-maintenance lower bounds.
+- `h2_uptake_values`: Hydrogen uptake values used to estimate maximum feasible
+  ATP-maintenance fluxes with `estimate_ngam`.
+
+Map the experimental DataFrame explicitly with these required keyword
+arguments:
+
+| Argument | Meaning |
+|---|---|
+| `experimental_growth_column` | Name of the measured growth or dilution-rate column |
+| `experimental_h2_column` | Name of the non-negative measured H2 uptake column |
+
+Default model reaction IDs are:
+
+| Parameter | Default |
+|---|---|
+| Biomass objective | `Growth` |
+| ATP maintenance | `ATPM` |
+| Hydrogen exchange | `EX_h2_e` |
+| Oxygen exchange | `EX_o2_e` |
+| Carbon-dioxide exchange | `EX_co2_e` |
+
+Model identifiers have documented defaults. Experimental column names have no
+defaults, so the caller must map them explicitly. `output_path` optionally
+writes the complete candidate table to CSV or Excel.
+
+#### `EnergyMaintenanceResult`
+
+Contains:
+
+- `combinations`: DataFrame with `H2_uptake_basis`, `NGAM_value`, `GAM_value`,
+  `Mean_Difference`, and `R2_Score`.
+- `best_by_mean_difference`: Candidate with the lowest mean absolute error.
+- `best_by_r2`: Candidate with the highest coefficient of determination.
+
+The two best candidates may differ, so the result reports both rather than
+silently choosing one scoring criterion.
+
+#### `MaintenanceCandidate`
+
+Immutable description of one candidate with `gam`, `ngam`,
+`mean_difference`, `r2_score`, and optional `h2_uptake_basis` attributes.
+
+#### `compute_growth_rates(model, experimental_data, *, experimental_h2_column, **options) -> pandas.DataFrame`
+
+Apply each experimental H2 uptake constraint, optimise growth, and return a
+copy of the input DataFrame with these additional columns:
+
+- `growth_rate`
+- `H2 Flux model`
+- `O2 Flux model`
+- `CO2 Flux model`
+
+Infeasible conditions remain `NaN`. The model objective and bounds are restored
+after the function returns.
+
+#### `set_gam(model, gam_value, **options) -> None`
+
+Set absolute ATP, water, ADP, phosphate, and proton coefficients in the biomass
+reaction. Unlike the search workflow, this low-level function intentionally
+modifies the supplied model. It raises an error if a required metabolite is
+missing from the biomass reaction.
+
+#### Other maintenance helpers
+
+- `estimate_ngam`: Maximise ATP-maintenance flux at a fixed H2 uptake.
+- `calculate_difference_for_gam`: Temporarily apply one GAM value, simulate all
+  experimental conditions, and return mean absolute error and R-squared.
+- `compute_mean_difference`: Calculate mean absolute experimental/simulated
+  growth error after excluding missing pairs.
+- `compute_r2_score`: Calculate the coefficient of determination after
+  excluding missing pairs.
+
 ### `afaa.phpp`
 
 The PHPP module calculates and visualises two-dimensional phenotype phase
@@ -659,7 +802,7 @@ without recomputing the model.
 Importing `afaa.phpp` does not read files, modify Matplotlib's global style, or
 display a figure.
 
-#### `phpp(model, h2_reaction_id="EX_h2_e", o2_reaction_id="EX_o2_e", *, objective=None, points=20, experimental_data=None, output_path=None, show=False, **analysis_options) -> PhppResult`
+#### `phpp(model, h2_reaction_id="EX_h2_e", o2_reaction_id="EX_o2_e", *, experimental_h2_column=None, experimental_o2_column=None, objective=None, points=20, experimental_data=None, output_path=None, show=False, **analysis_options) -> PhppResult`
 
 Run the complete model-based workflow:
 
@@ -678,8 +821,10 @@ at least two.
 Common analysis options forwarded to `analyze_phpp` include:
 
 - `growth_column`, default `flux_maximum`
-- `experimental_h2_column`, default `H2 Flux theoretic`
-- `experimental_o2_column`, default `O2 flux theoretic`
+- `experimental_h2_column`, the experimental H2 uptake column; required when
+  `experimental_data` is provided
+- `experimental_o2_column`, the experimental O2 uptake column; required when
+  `experimental_data` is provided
 - `replicate_count`, default `3`
 - `experimental_group_column`, default `None`
 - `error_type`, either `std` or `sem`
@@ -804,6 +949,11 @@ arguments are forwarded to `update_gam`.
 Run `afaa.phpp.phpp` with the model stored in the workbench. Keyword arguments
 control production-envelope computation, experimental-data processing, plotting,
 and output.
+
+#### `Workbench.optimize_energy_maintenance(experimental_data, gam_values, **kwargs)`
+
+Run `afaa.energy_maintenance.optimize_energy_maintenance` using the model stored
+in the workbench.
 
 ## Working with Excel
 

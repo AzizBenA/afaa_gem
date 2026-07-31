@@ -83,6 +83,8 @@ def test_analyze_phpp_returns_structured_results_without_showing(
     result = analyze_phpp(
         envelope,
         experimental_data,
+        experimental_h2_column="H2 Flux theoretic",
+        experimental_o2_column="O2 flux theoretic",
         show=False,
     )
 
@@ -98,6 +100,17 @@ def test_analyze_phpp_returns_structured_results_without_showing(
     show.assert_not_called()
 
     plt.close(result.figure)
+
+
+def test_analyze_phpp_requires_experimental_column_names(
+    envelope,
+    experimental_data,
+):
+    with pytest.raises(
+        ValueError,
+        match="experimental_h2_column",
+    ):
+        analyze_phpp(envelope, experimental_data)
 
 
 def test_analyze_phpp_can_save_figure(
@@ -181,4 +194,37 @@ def test_workbench_phpp_uses_stored_model(
         h2_reaction_id="H2",
         o2_reaction_id="O2",
         points=10,
+    )
+
+
+def test_phpp_forwards_custom_experimental_columns(
+    tiny_model,
+    monkeypatch,
+):
+    envelope = pd.DataFrame({"flux_maximum": [1.0]})
+    expected = object()
+    monkeypatch.setattr(
+        phpp_module,
+        "compute_phpp",
+        Mock(return_value=envelope),
+    )
+    analyze = Mock(return_value=expected)
+    monkeypatch.setattr(phpp_module, "analyze_phpp", analyze)
+
+    result = public_phpp(
+        tiny_model,
+        experimental_h2_column="hydrogen",
+        experimental_o2_column="oxygen",
+    )
+
+    assert result is expected
+    analyze.assert_called_once_with(
+        envelope,
+        experimental_data=None,
+        h2_column="EX_h2_e",
+        o2_column="EX_o2_e",
+        experimental_h2_column="hydrogen",
+        experimental_o2_column="oxygen",
+        output_path=None,
+        show=False,
     )

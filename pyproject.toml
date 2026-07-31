@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "afaa_gem"
-version = "0.2.0"
+version = "0.3.0"
 description = "Utilities for construction and analysis of genome-scale metabolic models"
 readme = "README.md"
 requires-python = ">=3.10"
